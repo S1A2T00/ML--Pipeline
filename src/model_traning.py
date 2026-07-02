@@ -4,6 +4,7 @@ import pandas as pd
 import pickle
 import logging
 from sklearn.ensemble import RandomForestClassifier
+import yaml
 
 # ==========================
 # Create logs directory
@@ -37,6 +38,24 @@ if not logger.handlers:
 
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
+
+
+def load_params(params_path: str) -> dict:
+    """Load parameters from a YAML file."""
+    try:
+        with open(params_path, 'r') as file:
+            params = yaml.safe_load(file)
+        logger.debug('Parameters retrieved from %s', params_path)
+        return params
+    except FileNotFoundError:
+        logger.error('File not found: %s', params_path)
+        raise
+    except yaml.YAMLError as e:
+        logger.error('YAML error: %s', e)
+        raise
+    except Exception as e:
+        logger.error('Unexpected error: %s', e)
+        raise
 
 
 # ==========================
@@ -130,34 +149,42 @@ def save_model(model, file_path):
 # Main Function
 # ==========================
 def main():
-
     try:
+        all_params = load_params('params.yaml') or {}
+        # Support multiple possible keys and provide defaults
+        mp = (
+            all_params.get('model_building') or
+            all_params.get('model_traning') or
+            all_params.get('model_training')
+        ) or {}
 
-        train_data = load_data("./data/processed/train_tfidf.csv")
+        # defaults
+        default_params = {"n_estimators": 100, "random_state": 42}
 
+        # Safely coerce types and fall back to defaults on error
+        try:
+            n_estimators = int(mp.get('n_estimators', default_params['n_estimators']))
+        except Exception:
+            n_estimators = default_params['n_estimators']
+
+        try:
+            random_state = int(mp.get('random_state', default_params['random_state']))
+        except Exception:
+            random_state = default_params['random_state']
+
+        params = {"n_estimators": n_estimators, "random_state": random_state}
+        train_data = load_data('./data/processed/train_tfidf.csv')
         X_train = train_data.iloc[:, :-1].values
         y_train = train_data.iloc[:, -1].values
 
-        model = train_model(
-            X_train,
-            y_train,
-            params
-        )
-
-        save_model(
-            model,
-            "./models/model.pkl"
-        )
-
-        logger.info("Model Building Completed Successfully!")
+        clf = train_model(X_train, y_train, params)
+        
+        model_save_path = 'models/model.pkl'
+        save_model(clf, model_save_path)
 
     except Exception as e:
-        logger.error(
-            "Failed to complete model building process: %s",
-            e
-        )
-        print("Error:", e)
+        logger.error('Failed to complete the model building process: %s', e)
+        print(f"Error: {e}")
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
